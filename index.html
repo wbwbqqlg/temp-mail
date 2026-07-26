@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>限时一次性临时邮箱 | Temp Mail</title>
+<style>
+  :root {
+    --primary: #6366f1;
+    --primary-dark: #4f46e5;
+    --bg: #0f172a;
+    --bg-card: #1e293b;
+    --bg-card-2: #273449;
+    --text: #f1f5f9;
+    --text-muted: #94a3b8;
+    --success: #22c55e;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+    --border: #334155;
+    --radius: 14px;
+    --shadow: 0 10px 30px rgba(0,0,0,.35);
+    --mono: 'SF Mono', 'Fira Code', Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: radial-gradient(1200px 600px at 10% -10%, rgba(99,102,241,.25), transparent),
+                radial-gradient(1000px 500px at 110% 10%, rgba(34,197,94,.12), transparent),
+                var(--bg);
+    color: var(--text);
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 22px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(8px);
+    background: rgba(15,23,42,.7);
+    position: sticky; top: 0; z-index: 50;
+  }
+  .logo { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 20px; }
+  .logo-dot {
+    width: 32px; height: 32px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+    display: grid; place-items: center; color: #fff; font-size: 18px;
+    box-shadow: 0 6px 20px rgba(99,102,241,.5);
+  }
+  .header-actions { display: flex; gap: 10px; align-items: center; }
+  .status-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--success); box-shadow: 0 0 0 3px rgba(34,197,94,.18);
+    animation: pulse 1.6s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 1; transform: scale(1); }
+    50% { opacity: .55; transform: scale(.85); }
+  }
+  .badge {
+    font-size: 12px; padding: 4px 10px; border-radius: 999px;
+    background: rgba(99,102,241,.18); color: #c7d2fe; border: 1px solid rgba(99,102,241,.35);
+  }
+
+  main { flex: 1; width: 100%; max-width: 1100px; margin: 0 auto; padding: 28px 20px 60px; }
+
+  .hero { text-align: center; margin-bottom: 28px; }
+  .hero h1 { font-size: clamp(24px, 4vw, 34px); margin-bottom: 8px; letter-spacing: -.5px; }
+  .hero p { color: var(--text-muted); font-size: 15px; }
+
+  .card {
+    background: linear-gradient(180deg, var(--bg-card), #192334);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 22px;
+    margin-bottom: 22px;
+  }
+  .email-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .email-box {
+    flex: 1; min-width: 240px;
+    background: var(--bg-card-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: 17px;
+    color: #e2e8f0;
+    display: flex; align-items: center; gap: 10px;
+    word-break: break-all;
+  }
+  .email-box .at { color: var(--primary); font-weight: 700; }
+  .btn {
+    border: none; cursor: pointer; font-weight: 600; font-size: 14px;
+    padding: 12px 18px; border-radius: 10px; display: inline-flex; align-items: center; gap: 8px;
+    transition: transform .08s ease, box-shadow .15s ease, background .2s;
+    color: #fff;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); box-shadow: 0 8px 22px rgba(99,102,241,.4); }
+  .btn-primary:hover { filter: brightness(1.07); }
+  .btn-ghost { background: var(--bg-card-2); color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost:hover { background: #2f3e58; }
+  .btn-danger { background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 8px 22px rgba(239,68,68,.35); }
+  .btn-danger:hover { filter: brightness(1.07); }
+  .btn:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+
+  .timer-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-top: 18px; }
+  .timer { display: flex; align-items: center; gap: 12px; }
+  .timer-ring {
+    --p: 100;
+    width: 54px; height: 54px; border-radius: 50%;
+    background: conic-gradient(var(--primary) calc(var(--p) * 1%), rgba(255,255,255,.08) 0);
+    display: grid; place-items: center; position: relative;
+  }
+  .timer-ring::after { content: ''; position: absolute; inset: 5px; border-radius: 50%; background: var(--bg-card); }
+  .timer-ring span { position: relative; z-index: 1; font-weight: 700; font-size: 15px; font-family: var(--mono); }
+  .timer-info { display: flex; flex-direction: column; }
+  .timer-info .label { font-size: 12px; color: var(--text-muted); }
+  .timer-info .value { font-size: 18px; font-weight: 700; font-family: var(--mono); }
+  .duration-select { display: flex; gap: 8px; flex-wrap: wrap; }
+  .duration-btn {
+    background: var(--bg-card-2); border: 1px solid var(--border); color: var(--text-muted);
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600;
+    transition: all .15s;
+  }
+  .duration-btn:hover { color: var(--text); border-color: #475569; }
+  .duration-btn.active { background: rgba(99,102,241,.2); color: #c7d2fe; border-color: var(--primary); }
+
+  .tabs { display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+  .tab { background: transparent; border: none; color: var(--text-muted); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; }
+  .tab.active { background: rgba(99,102,241,.18); color: #c7d2fe; }
+  .tab:hover:not(.active) { color: var(--text); background: var(--bg-card-2); }
+
+  .inbox-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .inbox-header h3 { font-size: 16px; display: flex; align-items: center; gap: 8px; }
+  .count-badge { background: var(--primary); color: #fff; font-size: 12px; padding: 2px 9px; border-radius: 999px; font-weight: 700; }
+  .refresh-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--text-muted);
+    width: 36px; height: 36px; border-radius: 10px; cursor: pointer; display: grid; place-items: center;
+    transition: all .15s;
+  }
+  .refresh-btn:hover { color: var(--text); border-color: #475569; }
+  .refresh-btn.spinning svg { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .mail-list { display: flex; flex-direction: column; gap: 10px; }
+  .mail-item {
+    background: var(--bg-card-2); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; cursor: pointer; transition: all .15s;
+    display: flex; gap: 14px; align-items: flex-start;
+  }
+  .mail-item:hover { border-color: #475569; transform: translateY(-1px); }
+  .mail-item.unread { border-left: 3px solid var(--primary); }
+  .mail-avatar {
+    width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 15px;
+  }
+  .mail-body { flex: 1; min-width: 0; }
+  .mail-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .mail-from { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mail-time { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+  .mail-subject { font-size: 14px; color: var(--text); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mail-preview { font-size: 13px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .empty-state { text-align: center; padding: 50px 20px; color: var(--text-muted); }
+  .empty-state .icon { font-size: 42px; margin-bottom: 12px; opacity: .7; }
+  .empty-state p { font-size: 14px; }
+
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(2,6,23,.7); backdrop-filter: blur(6px);
+    display: none; align-items: center; justify-content: center; z-index: 100; padding: 20px;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px;
+    box-shadow: var(--shadow); width: 100%; max-width: 680px; max-height: 80vh; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .modal-header { padding: 18px 22px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .modal-header h3 { font-size: 16px; }
+  .close-btn { background: transparent; border: none; color: var(--text-muted); font-size: 22px; cursor: pointer; width: 36px; height: 36px; border-radius: 8px; display: grid; place-items: center; }
+  .close-btn:hover { background: var(--bg-card-2); color: var(--text); }
+  .modal-body { padding: 20px 22px; overflow-y: auto; flex: 1; }
+  .mail-meta { font-size: 13px; color: var(--text-muted); margin-bottom: 6px; }
+  .mail-content { margin-top: 14px; line-height: 1.65; font-size: 14px; color: #e2e8f0; word-break: break-word; }
+  .mail-content pre { white-space: pre-wrap; font-family: inherit; }
+  .verif-code {
+    margin-top: 16px; padding: 14px 18px; background: rgba(34,197,94,.1);
+    border: 1px dashed rgba(34,197,94,.4); border-radius: 10px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .verif-code .label { font-size: 13px; color: var(--text-muted); }
+  .verif-code .code { font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--success); letter-spacing: 2px; }
+
+  .toast-container { position: fixed; top: 20px; right: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px; }
+  .toast {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 18px; font-size: 14px; box-shadow: var(--shadow);
+    display: flex; align-items: center; gap: 10px; animation: slideIn .25s ease; max-width: 360px;
+  }
+  .toast.success { border-left: 3px solid var(--success); }
+  .toast.error { border-left: 3px solid var(--danger); }
+  .toast.info { border-left: 3px solid var(--primary); }
+  @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  footer { text-align: center; padding: 22px; color: var(--text-muted); font-size: 12px; border-top: 1px solid var(--border); }
+  footer a { color: #818cf8; text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  .loading { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; }
+
+  @media (max-width: 600px) {
+    .email-row { flex-direction: column; align-items: stretch; }
+    .email-box { font-size: 15px; }
+    .btn { justify-content: center; }
+    .timer-row { flex-direction: column; align-items: flex-start; }
+    header { padding: 16px; }
+    .logo { font-size: 17px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot">✉</div>
+    Temp Mail
+  </div>
+  <div class="header-actions">
+    <span class="status-dot" id="statusDot" title="API 状态"></span>
+    <span class="badge" id="statusText">连接中…</span>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <h1>限时一次性临时邮箱</h1>
+    <p>即时生成 · 自动销毁 · 保护你的真实邮箱远离垃圾邮件</p>
+  </section>
+
+  <section class="card">
+    <div class="email-row">
+      <div class="email-box" id="emailBox">
+        <span id="emailLocal">点击生成</span><span class="at">@</span><span id="emailDomain">domain.com</span>
+      </div>
+      <button class="btn btn-primary" id="btnGenerate">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        生成新邮箱
+      </button>
+      <button class="btn btn-ghost" id="btnCopy">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        复制
+      </button>
+      <button class="btn btn-danger" id="btnDelete">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z"/></svg>
+        销毁
+      </button>
+    </div>
+    <div class="timer-row">
+      <div class="timer">
+        <div class="timer-ring" id="timerRing"><span id="timerText">--:--</span></div>
+        <div class="timer-info">
+          <span class="label">剩余有效期</span>
+          <span class="value" id="timerValue">尚未生成</span>
+        </div>
+      </div>
+      <div class="duration-select" id="durationSelect">
+        <button class="duration-btn" data-min="5">5 分钟</button>
+        <button class="duration-btn active" data-min="10">10 分钟</button>
+        <button class="duration-btn" data-min="30">30 分钟</button>
+        <button class="duration-btn" data-min="60">60 分钟</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="tabs">
+      <button class="tab active" data-tab="inbox">📥 收件箱</button>
+      <button class="tab" data-tab="help">❓ 使用说明</button>
+    </div>
+    <div id="tabInbox">
+      <div class="inbox-header">
+        <h3>收到的邮件 <span class="count-badge" id="mailCount">0</span></h3>
+        <button class="refresh-btn" id="btnRefresh" title="刷新收件箱">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-9-9c2.52 0 4.85.99 6.57 2.6L21 8"/><path d="M21 3v5h-5"/></svg>
+        </button>
+      </div>
+      <div class="mail-list" id="mailList">
+        <div class="empty-state">
+          <div class="icon">📭</div>
+          <p>邮箱空空如也，先用上方地址注册试试吧～</p>
+        </div>
+      </div>
+    </div>
+    <div id="tabHelp" style="display:none;">
+      <div style="line-height:1.8;font-size:14px;color:#cbd5e1;">
+        <h4 style="margin-bottom:10px;font-size:15px;">🛠 如何使用</h4>
+        <ol style="padding-left:20px;display:flex;flex-direction:column;gap:8px;">
+          <li>点击「<b>生成新邮箱</b>」按钮，系统会自动创建一个随机邮箱地址。</li>
+          <li>在需要注册/验证的网站上粘贴这个临时邮箱。</li>
+          <li>回到本页面，点击右上角刷新按钮，等待验证邮件到达。</li>
+          <li>点击邮件即可查看内容，<b>验证码会自动高亮提取</b>。</li>
+          <li>时间一到，邮箱和所有邮件会<b>自动销毁</b>，不留痕迹。</li>
+        </ol>
+        <h4 style="margin:18px 0 8px;font-size:15px;">⚠️ 注意事项</h4>
+        <ul style="padding-left:20px;display:flex;flex-direction:column;gap:6px;">
+          <li>邮箱有效期结束后将无法恢复，请及时保存重要信息。</li>
+          <li>本服务依赖公共 API（Mail.tm），高峰期可能稍有延迟。</li>
+          <li>请勿用于重要账户注册，仅适合一次性验证场景。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  基于 <a href="https://mail.tm" target="_blank" rel="noopener">Mail.tm</a> 公共 API 构建 · 数据仅存于内存，过期自动清除 · 仅供学习与交流使用
+</footer>
+
+<div class="modal-overlay" id="mailModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalSubject">邮件详情</h3>
+      <button class="close-btn" id="btnCloseModal">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody">
+      <div class="mail-meta" id="modalFrom"></div>
+      <div class="mail-meta" id="modalTime"></div>
+      <div class="mail-content" id="modalContent"></div>
+      <div class="verif-code" id="verifBlock" style="display:none;">
+        <span class="label">🔑 检测到验证码：</span>
+        <span class="code" id="verifCode"></span>
+        <button class="btn btn-primary" style="padding:6px 12px;font-size:12px;margin-left:auto;" id="btnCopyCode">复制</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+const API_BASE = 'https://api.mail.tm';
+let selectedDuration = 10;
+let state = { token:null, accountId:null, address:null, password:null, expiresAt:null, timerInterval:null, refreshInterval:null, domains:[] };
+
+function toast(msg, type='info'){
+  const c = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  c.appendChild(el);
+  setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(),300); }, 3200);
+}
+
+async function api(path, opts={}){
+  const headers = {'Content-Type':'application/json', ...(opts.headers||{})};
+  if(state.token) headers['Authorization'] = `Bearer ${state.token}`;
+  const res = await fetch(API_BASE+path, {...opts, headers});
+  if(!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+async function checkApiStatus(){
+  try { await fetch(API_BASE+'/domains?page=1'); setStatus(true); }
+  catch { setStatus(false); }
+}
+function setStatus(ok){
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  dot.style.background = ok ? 'var(--success)' : 'var(--danger)';
+  dot.style.boxShadow = ok ? '0 0 0 3px rgba(34,197,94,.18)' : '0 0 0 3px rgba(239,68,68,.18)';
+  txt.textContent = ok ? 'API 在线' : 'API 离线';
+}
+
+async function getDomain(){
+  if(state.domains.length) return state.domains[Math.floor(Math.random()*state.domains.length)];
+  try{
+    const data = await api('/domains?page=1');
+    const list = (data['hydra:member']||[]).filter(d=>d.isActive);
+    if(!list.length) throw new Error('无可用域名');
+    state.domains = list.map(d=>d.domain);
+    return list[Math.floor(Math.random()*list.length)].domain;
+  }catch{
+    const fb = ['mail.tm','temporary.mail','tmpmail.net'];
+    return fb[Math.floor(Math.random()*fb.length)];
+  }
+}
+
+function randomStr(len, chars='abcdefghijklmnopqrstuvwxyz0123456789'){
+  let s=''; for(let i=0;i<len;i++) s+=chars[Math.floor(Math.random()*chars.length)]; return s;
+}
+
+async function generateEmail(){
+  const btn = document.getElementById('btnGenerate');
+  const orig = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span class="loading"></span> 生成中…';
+  try{
+    if(state.accountId){ try{ await api(`/accounts/${state.accountId}`,{method:'DELETE'}); }catch{} }
+    clearInterval(state.timerInterval); clearInterval(state.refreshInterval);
+
+    const domain = await getDomain();
+    const local = randomStr(12);
+    const address = `${local}@${domain}`;
+    const password = randomStr(20, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*');
+
+    await api('/accounts', {method:'POST', body:JSON.stringify({address,password})});
+    const tk = await api('/token', {method:'POST', body:JSON.stringify({address,password})});
+    const me = await api('/me', {headers:{'Authorization':`Bearer ${tk.token}`}});
+
+    state.token = tk.token; state.accountId = me.id; state.address = address; state.password = password;
+
+    document.getElementById('emailLocal').textContent = local;
+    document.getElementById('emailDomain').textContent = domain;
+
+    startTimer(selectedDuration);
+    startAutoRefresh();
+    loadMessages();
+    toast(`已生成：${address}`, 'success');
+  }catch(e){
+    console.error(e); toast('生成失败：'+e.message, 'error');
+  }finally{
+    btn.disabled = false; btn.innerHTML = orig;
+  }
+}
+
+function startTimer(minutes){
+  state.expiresAt = Date.now()+minutes*60000;
+  const ring = document.getElementById('timerRing');
+  const text = document.getElementById('timerText');
+  const val = document.getElementById('timerValue');
+  const total = minutes*60000;
+  clearInterval(state.timerInterval);
+  state.timerInterval = setInterval(()=>{
+    const remain = state.expiresAt - Date.now();
+    if(remain<=0){
+      clearInterval(state.timerInterval);
+      text.textContent='00:00'; val.textContent='已过期'; ring.style.setProperty('--p','0');
+      toast('邮箱已过期销毁','info'); destroyEmail(false); return;
+    }
+    const m=Math.floor(remain/60000), s=Math.floor((remain%60000)/1000);
+    text.textContent=`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    val.textContent=`${m} 分 ${s} 秒`;
+    ring.style.setProperty('--p', Math.max(0,(remain/total)*100));
+  },1000);
+}
+
+async function destroyEmail(manual=true){
+  clearInterval(state.timerInterval); clearInterval(state.refreshInterval);
+  if(state.accountId&&state.token){ try{ await api(`/accounts/${state.accountId}`,{method:'DELETE'}); }catch{} }
+  state.token=null; state.accountId=null; state.address=null;
+  document.getElementById('emailLocal').textContent='点击生成';
+  document.getElementById('emailDomain').textContent='domain.com';
+  document.getElementById('timerText').textContent='--:--';
+  document.getElementById('timerValue').textContent='尚未生成';
+  document.getElementById('timerRing').style.setProperty('--p','100');
+  document.getElementById('mailList').innerHTML='<div class="empty-state"><div class="icon">📭</div><p>邮箱空空如也，先用上方地址注册试试吧～</p></div>';
+  document.getElementById('mailCount').textContent='0';
+  if(manual) toast('邮箱已销毁','success');
+}
+
+function copyText(text){
+  navigator.clipboard.writeText(text).then(
+    ()=>toast('已复制到剪贴板','success'),
+    ()=>toast('复制失败','error')
+  );
+}
+
+async function loadMessages(){
+  if(!state.token) return;
+  try{
+    const data = await api('/messages');
+    const list = data['hydra:member']||[];
+    renderMessages(list);
+    const unread = list.filter(m=>!m.seen).length;
+    if(unread>0) toast(`收到 ${unread} 封新邮件`,'info');
+  }catch(e){ console.error(e); }
+}
+
+function renderMessages(list){
+  const c = document.getElementById('mailList');
+  document.getElementById('mailCount').textContent = list.length;
+  if(!list.length){
+    c.innerHTML='<div class="empty-state"><div class="icon">📭</div><p>还没有收到邮件，请稍候或点击刷新…</p></div>';
+    return;
+  }
+  list.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+  c.innerHTML = list.map(m=>{
+    const from = (m.from?.address)||'unknown@unknown.com';
+    const fromName = (m.from?.name)||from;
+    const avatar = fromName.charAt(0).toUpperCase();
+    const time = new Date(m.createdAt).toLocaleString('zh-CN',{hour12:false});
+    const subject = m.subject||'(无主题)';
+    const intro = m.intro||'';
+    return `<div class="mail-item ${m.seen?'':'unread'}" data-id="${m.id}">
+      <div class="mail-avatar">${avatar}</div>
+      <div class="mail-body">
+        <div class="mail-top"><span class="mail-from" title="${from}">${fromName}</span><span class="mail-time">${time}</span></div>
+        <div class="mail-subject">${subject}</div>
+        <div class="mail-preview">${intro}</div>
+      </div>
+    </div>`;
+  }).join('');
+  c.querySelectorAll('.mail-item').forEach(el=>{ el.addEventListener('click',()=>openMail(el.dataset.id,list)); });
+}
+
+function startAutoRefresh(){
+  clearInterval(state.refreshInterval);
+  state.refreshInterval = setInterval(loadMessages, 8000);
+}
+
+async function openMail(id, list){
+  const meta = list.find(m=>m.id===id); if(!meta) return;
+  try{ await api(`/messages/${id}`,{method:'PATCH',body:JSON.stringify({seen:true})}); }catch{}
+  let full = meta;
+  try{ full = await api(`/messages/${id}`); }catch{}
+  document.getElementById('modalSubject').textContent = full.subject||'(无主题)';
+  document.getElementById('modalFrom').textContent = `发件人：${full.from?.name||''} <${full.from?.address||''}>`;
+  document.getElementById('modalTime').textContent = `时间：${new Date(full.createdAt).toLocaleString('zh-CN',{hour12:false})}`;
+  const text = full.text||''; const html = full.html||'';
+  const contentEl = document.getElementById('modalContent');
+  if(html&&html.length){
+    contentEl.innerHTML='';
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText='width:100%;min-height:200px;border:1px solid var(--border);border-radius:8px;background:#fff;';
+    contentEl.appendChild(iframe);
+    iframe.srcdoc = `<style>body{font-family:-apple-system,sans-serif;padding:16px;color:#222;line-height:1.6;font-size:14px}</style>`+html;
+  }else{
+    contentEl.innerHTML = `<pre>${escapeHtml(text)}</pre>`;
+  }
+  const code = detectCode(text||html||'');
+  const vb = document.getElementById('verifBlock');
+  if(code){ vb.style.display='flex'; document.getElementById('verifCode').textContent=code; }
+  else { vb.style.display='none'; }
+  document.getElementById('mailModal').classList.add('show');
+  loadMessages();
+}
+
+function detectCode(text){
+  const patterns = [
+    /验证码[^\d]{0,5}(\d{4,8})/i,
+    /verification code[^\w]{0,5}(\d{4,8})/i,
+    /verification code is[^\w]{0,5}(\d{4,8})/i,
+    /code[^\w]{0,5}(\d{4,8})/i,
+    /[\s>:\(\[](\d{6})[\s\<\)\]\.\,\;]/,
+    /[\s>:\(\[](\d{4})[\s\<\)\]\.\,\;]/,
+  ];
+  for(const p of patterns){ const m=text.match(p); if(m) return m[1]; }
+  return null;
+}
+function escapeHtml(s){ return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+document.getElementById('btnGenerate').addEventListener('click', generateEmail);
+document.getElementById('btnCopy').addEventListener('click', ()=>{ if(state.address) copyText(state.address); else toast('请先生成邮箱','error'); });
+document.getElementById('btnDelete').addEventListener('click', ()=>{ if(!state.address){toast('当前没有活跃的邮箱','error');return;} if(confirm('确定要销毁当前邮箱吗？所有邮件将一并删除。')) destroyEmail(true); });
+document.getElementById('btnRefresh').addEventListener('click', ()=>{ const b=document.getElementById('btnRefresh'); b.classList.add('spinning'); loadMessages().finally(()=>setTimeout(()=>b.classList.remove('spinning'),600)); });
+document.getElementById('btnCloseModal').addEventListener('click', ()=>document.getElementById('mailModal').classList.remove('show'));
+document.getElementById('btnCopyCode').addEventListener('click', ()=>copyText(document.getElementById('verifCode').textContent));
+document.getElementById('mailModal').addEventListener('click', e=>{ if(e.target===document.getElementById('mailModal')) e.target.classList.remove('show'); });
+
+document.getElementById('durationSelect').addEventListener('click', e=>{
+  if(!e.target.classList.contains('duration-btn')) return;
+  document.querySelectorAll('.duration-btn').forEach(b=>b.classList.remove('active'));
+  e.target.classList.add('active');
+  selectedDuration = parseInt(e.target.dataset.min,10);
+  if(state.expiresAt) startTimer(selectedDuration);
+});
+
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tabInbox').style.display = tab.dataset.tab==='inbox'?'':'none';
+    document.getElementById('tabHelp').style.display = tab.dataset.tab==='help'?'':'none';
+  });
+});
+
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') document.getElementById('mailModal').classList.remove('show'); });
+
+checkApiStatus();
+setInterval(checkApiStatus, 30000);
+</script>
+</body>
+</html>
