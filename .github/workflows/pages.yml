@@ -14,17 +14,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Copy index.html to gh-pages
+      - name: Deploy to gh-pages
         run: |
-          # 简单直接：把 main 分支的 index.html 推到 gh-pages 分支
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 创建干净的 gh-pages 分支
           git checkout --orphan gh-pages
-          git rm -rf --cached .
-          # 只保留 index.html
-          find . -not -path './.git*' -not -name 'index.html' -delete 2>/dev/null || true
-          # 如果 index.html 在子目录需要拿出来
-          [ -f index.html ] || echo "WARNING: index.html missing"
-          git add index.html
-          git commit -m "deploy: 自动部署到 GitHub Pages" || echo "no changes"
+          git rm -rf --cached . 2>/dev/null || true
+          
+          # 清理所有文件，只保留需要的
+          find . -not -path './.git*' -not -name 'index.html' -not -name '.nojekyll' -delete 2>/dev/null || true
+          
+          # 确保 .nojekyll 存在
+          touch .nojekyll
+          
+          # 确认文件
+          ls -la
+          
+          git add -A
+          git commit -m "deploy: 静态部署（含 .nojekyll）" || echo "no changes"
           git push origin gh-pages --force
