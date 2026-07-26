@@ -6,25 +6,25 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
+  contents: write
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: .
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      
+      - name: Copy index.html to gh-pages
+        run: |
+          # 简单直接：把 main 分支的 index.html 推到 gh-pages 分支
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan gh-pages
+          git rm -rf --cached .
+          # 只保留 index.html
+          find . -not -path './.git*' -not -name 'index.html' -delete 2>/dev/null || true
+          # 如果 index.html 在子目录需要拿出来
+          [ -f index.html ] || echo "WARNING: index.html missing"
+          git add index.html
+          git commit -m "deploy: 自动部署到 GitHub Pages" || echo "no changes"
+          git push origin gh-pages --force
