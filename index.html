@@ -94,6 +94,10 @@
   .btn-ghost:hover { background: #2f3e58; }
   .btn-danger { background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 8px 22px rgba(239,68,68,.35); }
   .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .domain-select {
+    background: var(--bg-card-2); border: 1px solid var(--border); color: var(--text);
+    padding: 10px 12px; border-radius: 10px; font-size: 13px; max-width: 200px;
+  }
 
   .timer-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
   .timer { display: flex; align-items: center; gap: 10px; }
@@ -223,6 +227,7 @@
       <div class="email-box" id="emailBox">
         <span id="emailLocal">点击生成</span><span class="at">@</span><span id="emailDomain">domain.com</span>
       </div>
+      <select id="domainSelect" class="domain-select" title="选择域名（FLAI 拒发时可换域）"></select>
       <button class="btn btn-primary" id="btnGenerate">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
         生成
@@ -270,16 +275,19 @@
       <div class="help-text">
         <h4>🛠 如何使用</h4>
         <ol>
-          <li>点击「<b>生成</b>」按钮，自动创建随机邮箱地址。</li>
-          <li>在需要注册的网站上粘贴这个临时邮箱。</li>
-          <li>回到本页面等待邮件到达（每 8 秒自动刷新）。</li>
-          <li>点击邮件查看内容，<b>验证码会自动高亮</b>。</li>
-          <li>时间一到，邮箱自动销毁。</li>
+          <li>从下拉框选一个域名（建议避开常见黑名单域）。</li>
+          <li>点击「<b>生成</b>」，自动创建随机邮箱地址。</li>
+          <li>在 FLAI App 注册页粘贴这个邮箱 → 点发送验证码。</li>
+          <li>回到本页面，每 5 秒自动刷新，验证码通常 30~90 秒到达。</li>
+          <li>点击邮件查看，<b>6 位字母+数字验证码会自动高亮</b>，点复制即可。</li>
         </ol>
-        <h4>⚠️ 注意事项</h4>
+        <h4>⚠️ FLAI 收不到验证码怎么办</h4>
         <ul>
-          <li>邮箱过期后无法恢复，请提前保存重要信息。</li>
-          <li>依赖 Mail.tm 公共 API，仅适合一次性验证。</li>
+          <li><b>换域名</b>：下拉框选另一个 @xxx，再点生成（最常见解法）。</li>
+          <li><b>只点一次发送</b>，连点会触发 FLAI 限速。</li>
+          <li><b>保持本页在前台</b>，切走会暂停刷新，回来自动补刷。</li>
+          <li>5 分钟仍为空 → 该域被 FLAI 拒发，务必换域。</li>
+          <li>FLAI 官方建议用真实邮箱注册，临时邮仅作应急。</li>
         </ul>
       </div>
     </div>
@@ -344,17 +352,26 @@ function setStatus(ok){
   txt.textContent = ok ? 'API 在线' : 'API 离线';
 }
 
-async function getDomain(){
-  if(state.domains.length) return state.domains[Math.floor(Math.random()*state.domains.length)];
+async function fetchDomains(){
   try{
     const data = await api('/domains?page=1');
     const list = (data['hydra:member']||[]).filter(d=>d.isActive);
-    if(!list.length) throw new Error('无可用域名');
-    state.domains = list.map(d=>d.domain);
-    return list[Math.floor(Math.random()*list.length)].domain;
+    if(list.length) state.domains = list.map(d=>d.domain);
+    else state.domains = ['mail.tm','temporary.mail','tmpmail.net'];
   }catch{
-    return ['mail.tm','temporary.mail','tmpmail.net'][Math.floor(Math.random()*3)];
+    state.domains = ['mail.tm','temporary.mail','tmpmail.net'];
   }
+  renderDomainOptions();
+}
+function renderDomainOptions(){
+  const sel = document.getElementById('domainSelect');
+  if(!sel) return;
+  sel.innerHTML = state.domains.map((d,i)=>`<option value="${d}" ${i===0?'selected':''}>@${d}</option>`).join('');
+}
+function getSelectedDomain(){
+  const sel = document.getElementById('domainSelect');
+  if(sel && sel.value) return sel.value;
+  return state.domains[Math.floor(Math.random()*state.domains.length)] || 'mail.tm';
 }
 
 function randomStr(len, chars='abcdefghijklmnopqrstuvwxyz0123456789'){
@@ -365,11 +382,13 @@ async function generateEmail(){
   const btn = document.getElementById('btnGenerate');
   const orig = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = '<span class="loading"></span> 生成中…';
+  // 每次生成前刷新域名列表，拿到最新可用域
+  await fetchDomains();
   try{
     if(state.accountId){ try{ await api(`/accounts/${state.accountId}`,{method:'DELETE'}); }catch{} }
     clearInterval(state.timerInterval); clearInterval(state.refreshInterval);
 
-    const domain = await getDomain();
+    const domain = getSelectedDomain();
     const local = randomStr(12);
     const address = `${local}@${domain}`;
     const password = randomStr(20, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*');
@@ -379,6 +398,7 @@ async function generateEmail(){
     const me = await api('/me', {headers:{'Authorization':`Bearer ${tk.token}`}});
 
     state.token = tk.token; state.accountId = me.id; state.address = address;
+    state.firstCheck = Date.now(); // 用于超时提示
 
     document.getElementById('emailLocal').textContent = local;
     document.getElementById('emailDomain').textContent = domain;
@@ -387,8 +407,12 @@ async function generateEmail(){
     startAutoRefresh();
     loadMessages();
     toast(`已生成：${address}`, 'success');
+    toast('提示：FLAI 验证码为 6 位字母+数字，5 分钟未收到请换域重试', 'info');
   }catch(e){
-    console.error(e); toast('生成失败：'+e.message, 'error');
+    console.error(e);
+    if(/401|403/.test(e.message)) toast('认证失败，请重试一次', 'error');
+    else if(/429/.test(e.message)) toast('请求过快，等 10 秒再试', 'error');
+    else toast('生成失败：'+e.message, 'error');
   }finally{
     btn.disabled = false; btn.innerHTML = orig;
   }
@@ -430,10 +454,21 @@ async function destroyEmail(manual=true){
 }
 
 function copyText(text){
-  navigator.clipboard.writeText(text).then(
-    ()=>toast('已复制','success'),
-    ()=>toast('复制失败','error')
-  );
+  // 优先 Clipboard API，失败则用 execCommand 兜底（兼容更多手机浏览器）
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(
+      ()=>toast('已复制：'+text,'success'),
+      ()=>fallbackCopy(text)
+    );
+  } else { fallbackCopy(text); }
+}
+function fallbackCopy(text){
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position='fixed'; ta.style.left='-9999px';
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); toast('已复制：'+text,'success'); }
+  catch(e){ toast('复制失败，请长按手动选','error'); }
+  document.body.removeChild(ta);
 }
 
 async function loadMessages(){
@@ -444,7 +479,16 @@ async function loadMessages(){
     renderMessages(list);
     const unread = list.filter(m=>!m.seen).length;
     if(unread>0) toast(`收到 ${unread} 封新邮件`,'info');
-  }catch(e){ console.error(e); }
+    // 5 分钟未收到任何邮件的友好提示（针对 FLAI 拒发场景）
+    if(list.length===0 && state.firstCheck && Date.now()-state.firstCheck > 5*60000){
+      toast('5 分钟未收到邮件：可能 FLAI 拒发该域，请换域重试', 'error');
+      state.firstCheck = Date.now(); // 重置，避免反复提示
+    }
+  }catch(e){
+    console.error(e);
+    if(/401/.test(e.message)){ toast('会话过期，请重新生成邮箱', 'error'); state.token=null; }
+    else if(/429/.test(e.message)){ /* 静默，下次轮询会恢复 */ }
+  }
 }
 
 function renderMessages(list){
@@ -474,7 +518,11 @@ function renderMessages(list){
 
 function startAutoRefresh(){
   clearInterval(state.refreshInterval);
-  state.refreshInterval = setInterval(loadMessages, 8000);
+  // FLAI 注册建议 5~8 秒轮询；手机切回时立即刷一次
+  state.refreshInterval = setInterval(loadMessages, 5000);
+  document.addEventListener('visibilitychange', ()=>{
+    if(!document.hidden && state.token){ loadMessages(); }
+  });
 }
 
 async function openMail(id, list){
@@ -505,22 +553,29 @@ async function openMail(id, list){
 }
 
 function detectCode(text){
-  const patterns = [
-    /验证码[^\d]{0,5}(\d{4,8})/i,
-    /verification code[^\w]{0,5}(\d{4,8})/i,
-    /code[^\w]{0,5}(\d{4,8})/i,
-    /[\s>:\(\[](\d{6})[\s\<\)\]\.\,\;]/,
-    /[\s>:\(\[](\d{4})[\s\<\)\]\.\,\;]/,
+  // FLAI 验证码：6 位「字母 + 数字」混合，发件人 support@flai.com
+  // 优先匹配 FLAI 特征：6 位 alphanum，紧跟在「验证码/code/verification」后
+  const flaiPatterns = [
+    /验证码[^\w]{0,8}([a-z0-9]{6})/i,
+    /verification code[^\w]{0,8}([a-z0-9]{6})/i,
+    /verification code is[^\w]{0,8}([a-z0-9]{6})/i,
+    /your code[^\w]{0,8}([a-z0-9]{6})/i,
+    /code[^\w]{0,8}([a-z0-9]{6})/i,
   ];
-  for(const p of patterns){ const m=text.match(p); if(m) return m[1]; }
-  return null;
+  for(const p of flaiPatterns){ const m=text.match(p); if(m) return m[1].toUpperCase(); }
+  // 兜底：任意 6 位字母数字串（排除纯数字日期等）
+  const m = text.match(/\b([a-z0-9]{6})\b/i);
+  if(m && /[a-z]/i.test(m[1]) && /\d/.test(m[1])) return m[1].toUpperCase();
+  // 最后兜底：纯数字 4~8 位
+  const m2 = text.match(/\b(\d{4,8})\b/);
+  return m2 ? m2[1] : null;
 }
 function escapeHtml(s){ return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
 // Events
 document.getElementById('btnGenerate').addEventListener('click', generateEmail);
 document.getElementById('btnCopy').addEventListener('click', ()=>{ if(state.address) copyText(state.address); else toast('请先生成邮箱','error'); });
-document.getElementById('btnDelete').addEventListener('click', ()=>{ if(!state.address){toast('当前没有活跃邮箱','error');return;} if(confirm('确定销毁当前邮箱？')) destroyEmail(true); });
+document.getElementById('btnDelete').addEventListener('click', ()=>{ if(!state.address){toast('当前没有活跃邮箱','error');return;} if(confirm('确定销毁当前邮箱?')) destroyEmail(true); });
 document.getElementById('btnRefresh').addEventListener('click', ()=>{ const b=document.getElementById('btnRefresh'); b.classList.add('spinning'); loadMessages().finally(()=>setTimeout(()=>b.classList.remove('spinning'),600)); });
 document.getElementById('btnCloseModal').addEventListener('click', ()=>document.getElementById('mailModal').classList.remove('show'));
 document.getElementById('btnCopyCode').addEventListener('click', ()=>copyText(document.getElementById('verifCode').textContent));
@@ -547,6 +602,7 @@ document.addEventListener('keydown', e=>{ if(e.key==='Escape') document.getEleme
 
 checkApiStatus();
 setInterval(checkApiStatus, 30000);
+fetchDomains(); // 初始化域名下拉
 </script>
 </body>
 </html>
