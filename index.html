@@ -249,6 +249,27 @@
     <p>专为 FLAI App 注册优化 · 多域名轮换 · 实时收信</p>
   </section>
 
+  <!-- 自动轮换模式 -->
+  <section class="card" id="autoCard">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+      <span style="font-size:16px;font-weight:700;">🚀 自动轮换模式</span>
+      <span style="font-size:11px;color:var(--text-muted);background:rgba(236,72,153,.12);padding:2px 8px;border-radius:6px;border:1px solid rgba(236,72,153,.25)">推荐</span>
+      <span style="font-size:11px;color:var(--text-muted);margin-left:auto">同时开 5 个域名，哪个先收到就用哪个</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+      <button class="btn btn-primary" id="btnAutoStart" style="background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 8px 22px rgba(16,185,129,.4)">
+        ▶️ 启动自动模式
+      </button>
+      <button class="btn btn-danger" id="btnAutoStop" disabled>⏹ 停止</button>
+      <span style="font-size:11px;color:var(--text-muted)" id="autoStatus">未启动</span>
+    </div>
+    <div id="autoBox" style="display:none;">
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">📋 候选邮箱（点击任一地址可复制）：</div>
+      <div id="autoList" style="display:flex;flex-direction:column;gap:6px;"></div>
+      <div style="margin-top:8px;font-size:11px;color:#fbbf24;" id="autoTip"></div>
+    </div>
+  </section>
+
   <section class="card">
     <!-- 域名选择 -->
     <div class="domain-picker">
@@ -327,15 +348,24 @@
 
     <div id="tabHelp" style="display:none;">
       <div class="help-text">
-        <h4>🚀 FLAI 注册完整流程</h4>
+        <h4>🚀 方法一：自动轮换模式（强烈推荐）</h4>
         <ol>
-          <li>在上方<span class="highlight">选择一个域名</span>（建议优先用列表中靠后的，更不容易被拦截）</li>
+          <li>点「<b>▶️ 启动自动模式</b>」→ 自动创建 5 个不同域名的邮箱</li>
+          <li>页面会<span class="highlight">每 15 秒自动切换</span>显示下一个邮箱地址</li>
+          <li>打开 FLAI App → 注册 → 邮箱栏<span class="highlight">粘贴当前显示的地址</span></li>
+          <li>点「发送验证码」→ 立刻切回本页面</li>
+          <li>如果 30 秒没收到 → 等页面自动切到下一个邮箱 → 再去 FLAI 换邮箱重试</li>
+          <li>哪个邮箱先收到验证码 → <span class="highlight">自动弹出！</span>验证码高亮可复制</li>
+          <li>也可以同时把 5 个邮箱都复制到 FLAI 轮流试（点列表里的「复制」）</li>
+        </ol>
+        <h4>📝 方法二：手动模式</h4>
+        <ol>
+          <li>在上方<span class="highlight">选择一个域名</span>（带 [GW] 的优先）</li>
           <li>点「<b>生成</b>」→ 邮箱地址出现 → 点「<b>复制</b>」</li>
-          <li>打开 FLAI App → 注册 → 选「邮箱注册」→ 粘贴邮箱</li>
-          <li>勾选协议 → 点「<b>发送验证码</b>」→ <span class="highlight">只点一次！</span></li>
+          <li>打开 FLAI App → 注册 → 粘贴邮箱 → 点发送验证码</li>
           <li>立刻切回本页面（保持前台）→ 等待 10~60 秒</li>
-          <li>邮件到达后点击查看 → <span class="code-inline">6位混合验证码</span>自动高亮 → 复制</li>
-          <li>切回 FLAI → 粘贴验证码 → 设置密码（需含大小写+数字+符号）</li>
+          <li>邮件到达后 → <span class="code-inline">6位混合验证码</span>自动高亮 → 复制</li>
+          <li>收不到就「销毁」→ 换域 → 重新生成</li>
         </ol>
         <h4>⚡ 密码格式要求</h4>
         <p style="color:#fde68a;font-size:12px;">FLAI 密码必须同时包含：大写字母 + 小写字母 + 数字 + 符号<br>示例：<span class="code-inline">Flai2025@Love</span> 或 <span class="code-inline">AiChat#6688</span></p>
@@ -727,6 +757,8 @@ function escapeHtml(s){ return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>
 // ========== 销毁 ==========
 async function destroyEmail(manual){
   clearInterval(state.timerInterval); clearInterval(state.refreshInterval);
+  // 同时停掉自动模式
+  if(AUTO.active) autoStop();
   if(state.accountId&&state.token){
     try{ await api(`/accounts/${state.accountId}`,{method:'DELETE'}); }catch{}
   }
@@ -760,6 +792,242 @@ function fallbackCopy(text){
   document.body.removeChild(ta);
 }
 
+// ========== 自动轮换模式 ==========
+const AUTO = {
+  active: false,
+  accounts: [],     // [{address, token, accountId, api, domain, status, code}]
+  pollInterval: null,
+  switchInterval: null,
+  currentIdx: 0,
+  maxAccounts: 5,
+  switchEvery: 15000, // 每 15 秒切换一个邮箱去 FLAI 注册（避免同一地址被限速）
+};
+
+async function autoStart(){
+  if(AUTO.active) return;
+  if(state.token) { // 先清掉手动模式的邮箱
+    if(confirm('自动模式会替换当前邮箱，继续？')){
+      await destroyEmail(false);
+    } else return;
+  }
+
+  await fetchAllDomains();
+  if(state.apiDomains.length < 2){
+    toast('可用域名不足，无法启动自动模式','error');
+    return;
+  }
+
+  AUTO.active = true;
+  AUTO.accounts = [];
+  AUTO.currentIdx = 0;
+  document.getElementById('btnAutoStart').disabled = true;
+  document.getElementById('btnAutoStop').disabled = false;
+  document.getElementById('autoBox').style.display = 'block';
+  document.getElementById('autoStatus').textContent = '启动中…';
+
+  // 取前 5 个未试过的域名（优先 Mail.gw）
+  const domains = state.apiDomains
+    .filter(x=>!state.triedDomains.has(x.domain))
+    .slice(0, AUTO.maxAccounts);
+  // 如果不够 5 个，允许重复使用
+  while(domains.length < AUTO.maxAccounts && state.apiDomains.length > 0){
+    const d = state.apiDomains[domains.length % state.apiDomains.length];
+    if(!domains.includes(d)) domains.push(d);
+  }
+
+  // 并发创建 5 个邮箱
+  const prefix = makePrefix();
+  const tasks = domains.slice(0, AUTO.maxAccounts).map(async (dInfo, i)=>{
+    const local = prefix + (i+1);
+    const addr = `${local}@${dInfo.domain}`;
+    const pw = randomStr(16, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*');
+    try{
+      currentAPI = dInfo.api;
+      await api('/accounts', {method:'POST', body:JSON.stringify({address:addr,password:pw})});
+      const tk = await api('/token', {method:'POST', body:JSON.stringify({address:addr,password:pw})});
+      const me = await api('/me', {headers:{'Authorization':`Bearer ${tk.token}`}});
+      const acc = {
+        address: addr, token: tk.token, accountId: me.id,
+        api: dInfo.api, domain: dInfo.domain,
+        status: '等待注册', code: null, messages: []
+      };
+      AUTO.accounts.push(acc);
+      renderAutoList();
+      return acc;
+    }catch(e){
+      console.warn('创建失败', addr, e.message);
+      return null;
+    }
+  });
+
+  await Promise.all(tasks);
+  const ok = AUTO.accounts.filter(Boolean);
+  if(ok.length === 0){
+    toast('自动模式启动失败，所有域名都被拒','error');
+    autoStop(); return;
+  }
+
+  // 显示主邮箱（第一个）
+  const main = ok[0];
+  state.token = main.token; state.accountId = main.accountId; state.address = main.address;
+  document.getElementById('emailLocal').textContent = main.address.split('@')[0];
+  document.getElementById('emailDomain').textContent = '@'+main.domain;
+  document.getElementById('autoStatus').textContent = `运行中 (${ok.length} 个邮箱)`;
+  document.getElementById('autoTip').innerHTML =
+    `✅ 已创建 <b>${ok.length}</b> 个邮箱<br>` +
+    `① 复制下方任一地址到 FLAI 注册（建议从第一个开始）<br>` +
+    `② 验证码会在任一邮箱收到后自动弹出<br>` +
+    `③ 收到后自动停止并切换到该邮箱`;
+
+  toast(`自动模式已启动：${ok.length} 个邮箱待命`,'success');
+
+  // 每 3 秒轮询所有邮箱
+  startAutoPoll();
+
+  // 每 15 秒切换主显示邮箱（方便用户轮流复制到 FLAI 试）
+  startAutoSwitch();
+}
+
+function startAutoPoll(){
+  clearInterval(AUTO.pollInterval);
+  AUTO.pollInterval = setInterval(async ()=>{
+    for(const acc of AUTO.accounts){
+      if(!acc || !acc.token) continue;
+      try{
+        const wasUnread = acc.messages.filter(m=>!m.seen).length;
+        const data = await fetch(acc.api.base+'/messages', {
+          headers:{'Authorization':`Bearer ${acc.token}`}
+        }).then(r=>r.json());
+        const list = data['hydra:member']||[];
+        const newOnes = list.filter(m=>!acc.messages.find(om=>om.id===m.id));
+        if(newOnes.length){
+          acc.messages = list;
+          acc.status = `收到 ${list.length} 封邮件`;
+          // 检查是否 FLAI 验证码
+          for(const m of newOnes){
+            try{
+              const full = await fetch(acc.api.base+`/messages/${m.id}`, {
+                headers:{'Authorization':`Bearer ${acc.token}`}
+              }).then(r=>r.json());
+              const text = full.text||''; const html = full.html||'';
+              const code = detectFlaiCode(text, html);
+              if(code){
+                acc.code = code;
+                acc.status = '🎯 验证码到达！';
+                onFlaiCodeFound(acc, code, full);
+                return; // 找到就停
+              }
+            }catch{}
+          }
+        }else{
+          acc.status = acc.messages.length ? `收到 ${acc.messages.length} 封（非验证码）` : '等待中…';
+        }
+      }catch(e){
+        acc.status = '轮询错误';
+      }
+    }
+    renderAutoList();
+  }, 3000);
+}
+
+function startAutoSwitch(){
+  clearInterval(AUTO.switchInterval);
+  AUTO.switchInterval = setInterval(()=>{
+    if(!AUTO.active || AUTO.accounts.length < 2) return;
+    AUTO.currentIdx = (AUTO.currentIdx + 1) % AUTO.accounts.length;
+    const acc = AUTO.accounts[AUTO.currentIdx];
+    if(!acc) return;
+    state.token = acc.token; state.accountId = acc.accountId; state.address = acc.address;
+    document.getElementById('emailLocal').textContent = acc.address.split('@')[0];
+    document.getElementById('emailDomain').textContent = '@'+acc.domain;
+    renderAutoList();
+  }, AUTO.switchEvery);
+}
+
+function renderAutoList(){
+  const box = document.getElementById('autoList');
+  box.innerHTML = AUTO.accounts.map((acc,i)=>{
+    if(!acc) return '';
+    const isMain = i===AUTO.currentIdx;
+    const dot = acc.code ? '🎯' : (acc.status.includes('收到') ? '📬' : '⏳');
+    return `<div style="display:flex;gap:6px;align-items:center;padding:6px 10px;background:${isMain?'rgba(236,72,153,.12)':'var(--bg-card-2)'};border:1px solid ${isMain?'var(--primary)':'var(--border)'};border-radius:8px;font-size:12px;flex-wrap:wrap;">
+      <span style="font-family:var(--mono);color:${acc.code?'var(--success)':'#e9d5f5'};word-break:break-all;flex:1;min-width:120px">${dot} ${acc.address}</span>
+      <span style="color:var(--text-muted);font-size:11px;white-space:nowrap">${acc.status}</span>
+      ${acc.code?`<button class="btn btn-primary" style="padding:3px 8px;font-size:11px" onclick="copyText('${acc.code}')">复制验证码 ${acc.code}</button>`:''}
+      <button class="btn btn-ghost" style="padding:3px 8px;font-size:11px" onclick="copyText('${acc.address}')">复制</button>
+    </div>`;
+  }).join('');
+}
+
+function onFlaiCodeFound(acc, code, fullMsg){
+  // 停止轮询
+  clearInterval(AUTO.pollInterval); clearInterval(AUTO.switchInterval);
+  AUTO.active = false;
+
+  // 切到这个邮箱
+  state.token = acc.token; state.accountId = acc.accountId; state.address = acc.address;
+  document.getElementById('emailLocal').textContent = acc.address.split('@')[0];
+  document.getElementById('emailDomain').textContent = '@'+acc.domain;
+  document.getElementById('autoStatus').textContent = '✅ 已捕获验证码';
+  document.getElementById('autoTip').innerHTML =
+    `<b style="color:var(--success)">🎯 验证码已找到！</b><br>` +
+    `来自：${acc.address}<br>` +
+    `验证码：<b style="font-size:18px;color:var(--success);letter-spacing:2px;font-family:var(--mono)">${code}</b>` +
+    ` <button class="btn btn-primary" style="padding:3px 10px;font-size:11px;margin-left:6px" onclick="copyText('${code}')">复制</button>`;
+
+  // 弹出邮件详情
+  setTimeout(()=>{
+    document.getElementById('modalSubject').textContent = fullMsg.subject||'FLAI 验证码';
+    document.getElementById('modalFrom').textContent = `发件人：${fullMsg.from&&fullMsg.from.name||''} <${fullMsg.from&&fullMsg.from.address||''}>`;
+    document.getElementById('modalTime').textContent = `时间：${new Date(fullMsg.createdAt).toLocaleString('zh-CN',{hour12:false})}`;
+    const text = fullMsg.text||''; const html = fullMsg.html||'';
+    const contentEl = document.getElementById('modalContent');
+    if(html && html.length){
+      contentEl.innerHTML='';
+      const iframe = document.createElement('iframe');
+      iframe.style.cssText='width:100%;min-height:160px;border:1px solid var(--border);border-radius:8px;background:#fff;';
+      contentEl.appendChild(iframe);
+      iframe.srcdoc = `<style>body{font-family:sans-serif;padding:12px;color:#222;line-height:1.6;font-size:13px}</style>`+html;
+    }else{
+      contentEl.innerHTML = `<pre>${escapeHtml(text)}</pre>`;
+    }
+    document.getElementById('verifBlock').style.display='flex';
+    document.getElementById('verifCode').textContent = code;
+    document.getElementById('mailModal').classList.add('show');
+  }, 500);
+
+  toast(`🎯 验证码到达！${code}（来自 ${acc.domain}）`,'success');
+  renderAutoList();
+
+  // 清理其他账号（保留中奖这个）
+  AUTO.accounts.forEach(a=>{
+    if(a && a!==acc && a.token){
+      try{ fetch(a.api.base+`/accounts/${a.accountId}`,{method:'DELETE',headers:{'Authorization':`Bearer ${a.token}`}}); }catch{}
+    }
+  });
+
+  document.getElementById('btnAutoStart').disabled = false;
+  document.getElementById('btnAutoStop').disabled = true;
+}
+
+function autoStop(){
+  AUTO.active = false;
+  clearInterval(AUTO.pollInterval); clearInterval(AUTO.switchInterval);
+  // 销毁所有自动邮箱
+  AUTO.accounts.forEach(a=>{
+    if(a && a.token){
+      try{ fetch(a.api.base+`/accounts/${a.accountId}`,{method:'DELETE',headers:{'Authorization':`Bearer ${a.token}`}}); }catch{}
+    }
+  });
+  AUTO.accounts = [];
+  document.getElementById('btnAutoStart').disabled = false;
+  document.getElementById('btnAutoStop').disabled = true;
+  document.getElementById('autoBox').style.display = 'none';
+  document.getElementById('autoStatus').textContent = '已停止';
+  document.getElementById('autoTip').textContent = '';
+  toast('自动模式已停止，所有邮箱已销毁','info');
+}
+
 // ========== 事件绑定 ==========
 document.getElementById('btnGenerate').addEventListener('click', generateEmail);
 document.getElementById('btnCopy').addEventListener('click', ()=>{
@@ -778,6 +1046,8 @@ document.getElementById('btnRefreshDomains').addEventListener('click', async ()=
   await fetchAllDomains();
   toast(`域名池已更新：${state.apiDomains.length} 个可用`,'success');
 });
+document.getElementById('btnAutoStart').addEventListener('click', autoStart);
+document.getElementById('btnAutoStop').addEventListener('click', autoStop);
 document.getElementById('btnCloseModal').addEventListener('click', ()=>document.getElementById('mailModal').classList.remove('show'));
 document.getElementById('btnCopyCode').addEventListener('click', ()=>copyText(document.getElementById('verifCode').textContent));
 document.getElementById('mailModal').addEventListener('click', e=>{ if(e.target===document.getElementById('mailModal')) e.target.classList.remove('show'); });
