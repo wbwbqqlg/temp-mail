@@ -167,6 +167,31 @@
   }
 
   .hidden { display: none; }
+
+  /* iframe 内嵌面板 */
+  .embed-wrap {
+    border: 1px solid var(--border); border-radius: 8px;
+    overflow: hidden; background: #fff; margin-bottom: 8px;
+  }
+  .embed-frame {
+    width: 100%; height: 420px; border: 0;
+    display: block;
+  }
+  .embed-footer {
+    font-size: 11px; color: var(--muted);
+    display: flex; align-items: center; gap: 4px;
+  }
+  .embed-tip { color: var(--muted); }
+  .embed-link {
+    color: #c4b5fd; text-decoration: none; font-weight: 600;
+    border-bottom: 1px dashed #c4b5fd;
+  }
+  .embed-link:hover { color: #fbcfe8; }
+
+  /* 优化 provider 按钮 */
+  .provider-item .btn {
+    flex-shrink: 0;
+  }
 </style>
 </head>
 <body>
@@ -239,6 +264,21 @@
         </div>
         <button class="btn btn-blue" onclick="openSite('https://www.moakt.com/zh/mail','Moakt')">打开</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ===== iframe 内嵌面板 ===== -->
+  <div class="card hidden" id="embedPanel">
+    <div class="section-title">
+      <span id="embedLabel">网页邮箱</span>
+      <button class="btn btn-ghost" style="margin-left:auto;padding:4px 8px;font-size:11px" onclick="closeEmbed()">✕ 关闭</button>
+    </div>
+    <div class="embed-wrap">
+      <iframe id="embedFrame" class="embed-frame" src="about:blank" title="邮箱网页版"></iframe>
+    </div>
+    <div class="embed-footer">
+      <span class="embed-tip">上方无法显示？→ </span>
+      <a id="embedDirectLink" href="#" target="_blank" rel="noopener" class="embed-link">点此在新标签页打开</a>
     </div>
   </div>
 
@@ -344,16 +384,53 @@ function fbCopy(text){
   document.body.removeChild(ta);
 }
 
-// ========== 打开外部站点 ==========
+// ========== 打开外部站点（iframe 内嵌 + 新标签双模式） ==========
 function openSite(url, name){
   log(`打开 ${name}: ${url}`);
-  // 新标签页打开
-  const w = window.open(url, '_blank', 'noopener,noreferrer');
-  if (!w) {
-    toast('被浏览器拦截，请允许弹窗后重试','e');
-  } else {
-    toast(`已打开 ${name}，请在新页面获取邮箱后回来注册 FLAI`,'i');
-  }
+
+  // 显示内嵌浏览器面板
+  const panel = $('#embedPanel');
+  const frame = $('#embedFrame');
+  const label = $('#embedLabel');
+
+  label.textContent = `${name}（${url.replace('https://','')}）`;
+  $('#embedDirectLink').href = url;
+  $('#embedDirectLink').textContent = '🔗 点此在新标签页打开';
+
+  // 尝试 iframe 内嵌
+  frame.src = url;
+
+  panel.classList.remove('hidden');
+
+  // 滚动到面板
+  panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+  // 3 秒后检查 iframe 是否加载成功
+  setTimeout(() => {
+    try {
+      // 如果 iframe 被 X-Frame-Options 拦了，提示用户用新标签
+      const doc = frame.contentDocument;
+      if (!doc || doc.body === null) {
+        label.textContent = `${name}（无法内嵌，请用下方链接）`;
+        toast(`${name} 无法内嵌显示，请点击下方链接`,'i');
+      } else {
+        toast(`已加载 ${name}，在下方面板操作即可`,'s');
+      }
+    } catch(e) {
+      // 跨域，说明 iframe 加载了但被跨域限制（正常现象）
+      toast(`已加载 ${name}，在下方面板操作即可`,'s');
+    }
+  }, 3000);
+
+  // 同时尝试新标签（用户手势触发不会被拦）
+  try {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  } catch(e) {}
+}
+
+function closeEmbed(){
+  $('#embedPanel').classList.add('hidden');
+  $('#embedFrame').src = 'about:blank';
 }
 
 // ========== 1secmail 核心 ==========
