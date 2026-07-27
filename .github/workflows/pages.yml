@@ -1,0 +1,37 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Deploy to gh-pages
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 创建干净的 gh-pages 分支
+          git checkout --orphan gh-pages
+          git rm -rf --cached . 2>/dev/null || true
+          
+          # 清理所有文件，只保留需要的
+          find . -not -path './.git*' -not -name 'index.html' -not -name '.nojekyll' -delete 2>/dev/null || true
+          
+          # 确保 .nojekyll 存在
+          touch .nojekyll
+          
+          # 确认文件
+          ls -la
+          
+          git add -A
+          git commit -m "deploy: 静态部署（含 .nojekyll）" || echo "no changes"
+          git push origin gh-pages --force
